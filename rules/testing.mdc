@@ -1,0 +1,174 @@
+---
+description: Testing rules for backend (Go) and frontend (Vue3)
+globs: ['**/*_test.go', '**/tests/**', '**/*.spec.ts', '**/*.test.ts']
+alwaysApply: false
+---
+
+# Правила тестирования
+
+## Общие принципы
+
+- Unit-тесты располагаются рядом с тестируемыми файлами (backend: `foo.go` → `foo_test.go`, frontend: `UserCard.vue` → `UserCard.spec.ts`)
+- Тест создаётся вместе с кодом, не после
+- Тестируй поведение, а не реализацию
+- Каждый тест независим — не зависит от порядка запуска и других тестов
+- Тест должен быть читаем как документация: понятно что тестируется и почему
+
+## Backend (Go)
+
+### Unit тесты
+
+- Расположение: рядом с тестируемым файлом — `foo.go` → `foo_test.go`
+- Пакет: `package service_test` (black-box тестирование)
+- Моки: интерфейсы + ручные моки или `github.com/stretchr/testify/mock`
+- Assertions: `github.com/stretchr/testify/assert` и `require`
+- Структура теста — Table-driven tests:
+
+```go
+func TestUserService_GetByID(t *testing.T) {
+    tests := []struct {
+        name    string
+        input   int64
+        mockFn  func(*MockUserRepo)
+        want    *model.User
+        wantErr bool
+    }{
+        {
+            name:  "success",
+            input: 1,
+            mockFn: func(m *MockUserRepo) {
+                m.On("GetByID", mock.Anything, int64(1)).
+                    Return(&model.User{ID: 1}, nil)
+            },
+            want: &model.User{ID: 1},
+        },
+        {
+            name:  "not found",
+            input: 999,
+            mockFn: func(m *MockUserRepo) {
+                m.On("GetByID", mock.Anything, int64(999)).
+                    Return(nil, ErrNotFound)
+            },
+            wantErr: true,
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            repo := new(MockUserRepo)
+            tt.mockFn(repo)
+            svc := NewUserService(repo)
+
+            got, err := svc.GetByID(context.Background(), tt.input)
+
+            if tt.wantErr {
+                require.Error(t, err)
+                return
+            }
+            require.NoError(t, err)
+            assert.Equal(t, tt.want, got)
+        })
+    }
+}
+```
+
+### Интеграционные тесты (repository)
+
+- Использовать `testcontainers-go` для поднятия реального PostgreSQL
+- Расположение: `backend/internal/repository/integration_test.go`
+- Тег сборки: `//go:build integration`
+- Запуск: `go test -tags integration ./...`
+- Каждый тест работает в транзакции с откатом в конце:
+
+```go
+func TestUserRepo_Integration(t *testing.T) {
+    db := setupTestDB(t) // поднимает контейнер
+    tx, _ := db.Begin(context.Background())
+    t.Cleanup(func() { tx.Rollback(context.Background()) })
+    // ...
+}
+```
+
+### Покрытие
+
+- Минимальное покрытие service layer: 80%
+- Проверка покрытия: `go test -cover ./internal/service/...`
+
+---
+
+## Frontend (Vue3)
+
+### Unit тесты компонентов
+
+- Инструмент: Vitest + `@vue/test-utils`
+- Расположение: рядом с компонентом — `UserCard.vue` → `UserCard.spec.ts`
+- Структура:
+
+```ts
+import { mount } from '@vue/test-utils';
+import { describe, it, expect } from 'vitest';
+import UserCard from './UserCard.vue';
+
+describe('UserCard', () => {
+  it('renders user name', () => {
+    const wrapper = mount(UserCard, {
+      props: { name: 'Ivan', email: 'ivan@example.com' },
+    });
+    expect(wrapper.text()).toContain('Ivan');
+  });
+
+  it('emits "edit" on button click', async () => {
+    const wrapper = mount(UserCard, {
+      props: { name: 'Ivan', email: 'ivan@example.com' },
+    });
+    await wrapper.find('[data-testid="edit-btn"]').trigger('click');
+    expect(wrapper.emitted('edit')).toBeTruthy();
+  });
+});
+```
+
+### Unit тесты Pinia stores
+
+```ts
+import { setActivePinia, createPinia } from 'pinia';
+import { useUserStore } from './useUserStore';
+import { vi } from 'vitest';
+
+describe('useUserStore', () => {
+  beforeEach(() => setActivePinia(createPinia()));
+
+  it('fetches and sets user', async () => {
+    vi.spyOn(api, 'getUser').mockResolvedValue({ id: 1, name: 'Ivan' });
+    const store = useUserStore();
+    await store.fetchUser(1);
+    expect(store.user?.name).toBe('Ivan');
+  });
+});
+```
+
+### Unit тесты composables
+
+- Тестируются как чистые функции
+- Использовать `vi.mock()` для мокирования зависимостей
+
+### E2E тесты
+
+- Инструмент: Playwright
+- Расположение: `frontend/tests/e2e/`
+- Покрывают критические пользовательские сценарии (happy path)
+- Именование: `auth.spec.ts`, `user-profile.spec.ts`
+
+### Атрибуты для тестирования
+
+- Интерактивные элементы, на которые ссылаются тесты, должны иметь `data-testid`:
+
+```html
+<button data-testid="submit-btn">Сохранить</button>
+```
+
+- Не использовать CSS-классы или текст для поиска элементов в тестах
+
+### Покрытие
+
+- Минимальное покрытие: 70% для компонентов и composables
+- Запуск с покрытием: `vitest run --coverage`

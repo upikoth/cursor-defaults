@@ -1,0 +1,99 @@
+---
+description: Go backend rules (эталон — github.com/upikoth/starter-go)
+globs: backend/**
+alwaysApply: false
+---
+
+# Правила Backend (Go)
+
+## Слои и зависимости
+
+Сборка приложения в **`internal/app`**: сначала **repositories** и **clients**, затем **services**, затем **controller**. Зависимости только «внутрь»: к БД и внешним API обращаются **repositories** и **clients**; бизнес-сценарии — в **services**; HTTP — в **controller**.
+
+```
+controller (HTTP) → services → repositories / clients → БД и внешние сервисы
+```
+
+**Запрещено:**
+
+- Вызывать repository или клиентов напрямую из слоя controller (только через services).
+- Писать запросы к БД вне пакетов `internal/repositories/...`.
+- Держать бизнес-логику в HTTP-слое (только маппинг, вызов сервисов, ответы/ошибки).
+
+## Структура каталогов (как в эталоне)
+
+```
+backend/
+├── cmd/
+│   └── app/
+│       └── main.go          # Точка входа: опционально godotenv, config, logger, app, graceful shutdown
+├── internal/
+│   ├── app/                 # Сборка: repositories → clients → services → controller; Start/Stop
+│   ├── config/              # Конфиг из окружения (envconfig)
+│   ├── constants/           # Общие константы и sentinel-ошибки при необходимости
+│   ├── controller/          # Входной HTTP-слой (в эталоне — http-controller + handler)
+│   ├── services/            # Бизнес-логика по доменам (подпакеты: users, sessions, …)
+│   ├── repositories/        # Доступ к данным по бэкенду БД (в эталоне — ydb/…; здесь — слой под выбранную СУБД)
+│   ├── clients/             # Внешние HTTP/SDK-клиенты, не смешивать с repository
+│   ├── models/              # Доменные модели и типы ошибок API (например Error + ErrorCode)
+│   ├── pkg/                 # Логгер (интерфейс), трейсинг, переиспользуемые утилиты
+│   └── generated/           # Сгенерированный код (ogen и т.п.) — не править руками
+├── docs/                    # OpenAPI-спеки для генерации (в эталоне — docs/app/docs.yml и др.)
+├── scripts/                 # build, lint, generate
+├── .golangci.yaml           # Линтер (как в эталоне или согласованный с ним набор)
+├── .env.example
+└── go.mod
+```
+
+Имена подпакетов домена — **kebab-case** (`password-recovery-requests`). Внутри домена в эталоне принят файл **`1_init.go`** для конструктора и полей структуры; операции — отдельными файлами по смыслу (`get_by_id.go`, `create.go`, …).
+
+## HTTP и API
+
+- Контракт API задаётся **OpenAPI**; сервер и типы генерируются **ogen** (`go run github.com/ogen-go/ogen/cmd/ogen@latest …`) в `internal/generated/...`. Команды генерации — в `scripts/generate.sh` эталона.
+- Реализации методов API живут в **`internal/controller/.../handler`**, типы запросов/ответов — из сгенерированного пакета.
+- Префикс API и документация в маршрутизации — как в эталоне (например `/api/`, выдача swagger/static при необходимости).
+- Middleware: логирование запросов, трейсинг (OpenTelemetry), обработка ошибок через **ErrorHandler**, согласованный с `Handler.NewError`.
+
+## Ошибки
+
+- Доменные и клиентские ошибки с HTTP-семантикой — тип **`models.Error`** (код, статус, описание), проверка в обработчике через **`errors.As`** (см. эталон `handler.NewError`).
+- Оборачивание для стека и контекста: **`github.com/pkg/errors`** (`errors.WithStack`, `errors.Wrap`), совместимо с проверками `errors.Is` / `errors.As`.
+- Клиенту не отдавать внутренние детали; в ответе — согласованная структура ошибки из OpenAPI/генератора.
+
+## Логирование и наблюдаемость
+
+- Логгер — через **интерфейс** в `internal/pkg/logger` (в эталоне реализация на **zerolog**). Не использовать пакет `log` вне `main` (см. правила golangci в эталоне).
+- В **service**- и **handler**-методах — спаны **OpenTelemetry** (`otel.Tracer`, `defer span.End()`), при ошибках — интеграция с трейсингом как в эталоне (`tracing.HandleError` и т.д.).
+
+## Конфигурация
+
+- Только **переменные окружения**, разбор через **`envconfig`** (структуры с тегами `envconfig`).
+- **`godotenv.Load()`** — только для локальной разработки; ошибку загрузки файла не считать фатальной для продакшена (как в `cmd/app/main.go` эталона).
+- Пример переменных — **`.env.example`** без секретов.
+
+## Репозитории и миграции
+
+- Доступ к БД инкапсулировать в **`internal/repositories/<драйвер>/<домен>/`**, отдельно при необходимости модели строк БД (**`ydbmodels`** в эталоне — аналог для своей СУБД).
+- Транзакции — на уровне сервиса/репозитория по паттерну эталона (`Transaction`, `WithTx` при необходимости).
+- Миграции — **goose**, SQL-файлы в каталоге миграций репозитория (в эталоне — `1_migrations` с нумерацией `00001_...sql`).
+
+## Клиенты
+
+- Вызовы внешних HTTP/API — в **`internal/clients`** (подпакеты по интеграции), инициализация в **`clients.New`**, передача в сервисы при необходимости. Не смешивать с `repositories`.
+
+## Качество кода
+
+- Запуск линтера: как в эталоне — **`golangci-lint run`** (конфиг **`.golangci.yaml`**).
+- Не добавлять **`init()`** и глобальные переменные без веской причины (линтеры `gochecknoinits`, `gochecknoglobals` в эталоне).
+- **`context.Context`** — первый параметр у функций с I/O и запросами.
+- Импорты: **goimports** с `local-prefixes` на модуль проекта (подставить свой путь модуля из `go.mod`).
+
+## Именование файлов и типов
+
+- Файлы Go: **`snake_case.go`**.
+- Пакеты и каталоги доменов: **kebab-case** для составных имён.
+- Экспортируемые типы и конструкторы — **PascalCase**; приватное — **camelCase**.
+
+## Обновление эталона
+
+При сомнениях смотреть актуальную версию **starter-go** (структура `internal/`, `scripts/`, `go.mod`, обработка ошибок и трейсинг).

@@ -1,0 +1,70 @@
+---
+description: PostgreSQL and migrations rules
+globs: ['backend/**', '**/*.sql']
+alwaysApply: false
+---
+
+# Правила базы данных (PostgreSQL)
+
+## Миграции
+
+- Инструмент: `golang-migrate` (`github.com/golang-migrate/migrate/v4`)
+- Расположение: `backend/migrations/`
+- Формат имени файла: `{version}_{description}.up.sql` и `{version}_{description}.down.sql`
+  - Пример: `000001_create_users.up.sql` / `000001_create_users.down.sql`
+- Каждая миграция обратима — файл `.down.sql` обязателен
+- Никогда не редактировать уже применённые миграции — только новая миграция
+
+## Именование объектов БД
+
+- Таблицы: `snake_case`, множественное число (`users`, `refresh_tokens`)
+- Колонки: `snake_case` (`created_at`, `user_id`)
+- Индексы: `idx_{table}_{columns}` (`idx_users_email`)
+- Внешние ключи: `fk_{table}_{referenced_table}` (`fk_posts_users`)
+- Первичный ключ: `id` (тип `BIGSERIAL` или `UUID`)
+
+## Обязательные колонки для каждой таблицы
+
+```sql
+id         BIGSERIAL PRIMARY KEY,
+created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+```
+
+## Типы данных
+
+- Временные метки: `TIMESTAMPTZ` (всегда с часовым поясом)
+- Деньги/суммы: `NUMERIC(12, 2)` (не FLOAT)
+- Статусы/enum: `VARCHAR(50)` с CHECK constraint или тип `ENUM`
+- UUID: `UUID` с `DEFAULT gen_random_uuid()`
+- Текст переменной длины: `TEXT` (не VARCHAR без ограничений)
+
+## Индексы
+
+- Индекс на каждый внешний ключ
+- Индекс на колонки, используемые в WHERE и ORDER BY
+- Уникальные индексы вместо UNIQUE constraint для составных условий
+- Не создавать лишних индексов — они замедляют INSERT/UPDATE
+
+## Правила SQL в коде (repository)
+
+- Использовать именованные параметры через `$1, $2, ...`
+- Использовать `pgx` (`github.com/jackc/pgx/v5`) как драйвер
+- Всегда передавать `context.Context` в запросы
+- Использовать транзакции для операций, затрагивающих несколько таблиц
+- Никогда не использовать `SELECT *` — перечислять колонки явно
+
+## Пагинация
+
+```sql
+SELECT id, name, created_at
+FROM users
+ORDER BY created_at DESC, id DESC
+LIMIT $1 OFFSET $2
+```
+
+## Безопасность
+
+- Никогда не конкатенировать строки для построения SQL — только параметризованные запросы
+- Минимальные привилегии для пользователя БД приложения
+- Пароли и секреты — только через переменные окружения

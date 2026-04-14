@@ -1,0 +1,200 @@
+---
+description: Vue3 frontend rules (FSD)
+globs: frontend/**
+alwaysApply: false
+---
+
+# Правила Frontend (Vue3)
+
+## Стек
+
+- Vue 3 + TypeScript
+- Vite
+- Pinia (стейт-менеджмент)
+- Vue Router
+- Axios (HTTP-клиент)
+
+## Архитектура — Feature-Sliced Design (FSD)
+
+Фронтенд строится по **[Feature-Sliced Design](https://feature-sliced.design/)**: изолированные слайсы по слоям, явные публичные API, однонаправленные зависимости.
+
+### Слои (снизу вверх)
+
+| Слой | Назначение |
+|------|------------|
+| **shared** | Переиспользуемый код без прикладной логики: UI-kit, утилиты, конфиг axios, общие типы. |
+| **entities** | Бизнес-сущности (пользователь, заказ): UI-карточки, модель данных, запросы за сущностью. |
+| **features** | Пользовательские сценарии и действия (авторизация, «добавить в избранное»). |
+| **widgets** | Крупные композиции из entities/features (шапка, сайдбар, блок дашборда). |
+| **pages** | Страницы: композиция widgets/features/entities, привязка к роутам. |
+| **app** | Инициализация приложения: `main.ts`, провайдеры, корневой layout, подключение роутера, глобальные стили. |
+
+Слой **процессы (processes)** в актуальной методологии не используем; сквозные сценарии выносятся в **features** или **app**.
+
+### Правило импортов
+
+Зависимости направлены **только сверху вниз**: `app` → `pages` → `widgets` → `features` → `entities` → `shared`. Обратные импорты запрещены (например, `shared` не импортирует `entities`).
+
+Внутри одного слоя слайсы **не импортируют друг друга** напрямую; при необходимости общий код выносится в **shared** или выше по слою.
+
+### Сегменты слайса
+
+Внутри слайса (например `entities/user`) используются стандартные сегменты по смыслу:
+
+- **ui** — Vue-компоненты слайса.
+- **model** — стор Pinia, composables состояния, типы домена слайса.
+- **api** — функции запросов к backend для этого слайса (обёртки над общим HTTP-клиентом из `shared/api`).
+- **lib** — вспомогательная логика слайса без UI.
+- **config** — константы и настройки слайса (при необходимости).
+
+Не все сегменты обязательны; создавать только те, что нужны слайсу.
+
+### Публичное API
+
+Каждый слайс экспортирует наружу только то, что объявлено в **`index.ts`** в корне слайса (реэкспорт). Внешний код импортирует **только** из публичного API, не из внутренних файлов слайса (`import { X } from '@/entities/user'` — да; `import ... from '@/entities/user/ui/UserCard.vue'` — нет).
+
+### Пример структуры `src/`
+
+```
+frontend/
+├── src/
+│   ├── app/
+│   │   ├── main.ts
+│   │   ├── App.vue
+│   │   ├── providers/
+│   │   ├── styles/
+│   │   └── index.ts
+│   ├── pages/
+│   │   └── home/
+│   │       ├── ui/HomePage.vue
+│   │       └── index.ts
+│   ├── widgets/
+│   │   └── header/
+│   │       ├── ui/Header.vue
+│   │       └── index.ts
+│   ├── features/
+│   │   └── auth-by-email/
+│   │       ├── ui/
+│   │       ├── model/
+│   │       └── index.ts
+│   ├── entities/
+│   │   └── user/
+│   │       ├── ui/
+│   │       ├── model/
+│   │       ├── api/
+│   │       └── index.ts
+│   └── shared/
+│       ├── api/          ← инстанс axios, interceptors, base URL
+│       ├── ui/           ← атомарные кнопки, инпуты, типографика
+│       ├── lib/          ← чистые утилиты, хелперы
+│       └── config/
+├── tests/
+│   └── e2e/              ← E2E (Playwright)
+└── ...
+```
+
+Unit-тесты — рядом с кодом: `UserCard.vue` → `UserCard.spec.ts`, в `model/` — `useAuth.spec.ts` и т.д.
+
+## Компоненты
+
+- Только Composition API + `<script setup lang="ts">`
+- Props всегда с TypeScript-типами:
+
+```ts
+const props = defineProps<{
+  title: string;
+  count?: number;
+}>();
+```
+
+- Emits всегда с типами:
+
+```ts
+const emit = defineEmits<{
+  (e: 'update', value: string): void;
+  (e: 'close'): void;
+}>();
+```
+
+- Один компонент — один файл `.vue`
+- Максимальный размер компонента — 200 строк. Длиннее — разбить на подкомпоненты или вынести логику в **model** / **lib** слайса
+
+## Именование
+
+- Компоненты: `PascalCase.vue` (например `UserCard.vue`)
+- Composables: `useXxx.ts` (например `useAuth.ts`)
+- Stores: `useXxxStore.ts` (например `useUserStore.ts`) — размещать в сегменте **model** соответствующего **entity** или **feature**
+- Типы/интерфейсы: `PascalCase` (например `UserProfile`)
+- Файлы утилит: `camelCase.ts`
+
+## Pinia Stores
+
+- Один store — одна зона ответственности в рамках слайса (чаще **entity** или **feature**)
+- Никогда не мутировать state напрямую вне store
+- Структура store:
+
+```ts
+export const useUserStore = defineStore('user', () => {
+  // state
+  const user = ref<User | null>(null)
+
+  // getters
+  const isLoggedIn = computed(() => !!user.value)
+
+  // actions
+  async function fetchUser(id: number) { ... }
+
+  return { user, isLoggedIn, fetchUser }
+})
+```
+
+## API слой
+
+- Общий HTTP-клиент и перехватчики — в **`shared/api`**
+- Запросы, относящиеся к сущности или фиче, — в сегменте **`api`** этого слайса; ответы типизировать
+- Из **pages/widgets/features** не вызывать axios напрямую: использовать **entities** / **features** или их `api`-сегменты через публичное API
+- Никогда не вызывать axios из «глобальных» папок вне FSD (`src/api/` как единая куча не используем — только **shared** и слайсы)
+
+Пример типизированного вызова в слайсе:
+
+```ts
+export async function getUser(id: number): Promise<User> {
+  const { data } = await api.get<{ data: User }>(`/users/${id}`);
+  return data.data;
+}
+```
+
+## TypeScript
+
+- Строгий режим (`strict: true` в tsconfig)
+- Запрещено использовать `any` — использовать `unknown` с проверкой типов
+- Общие типы — в **`shared`** или в **model** слайса; дублирование DTO между слайсами сокращать через **shared/types** при необходимости
+- Не использовать type assertion (`as Foo`) без явной необходимости
+
+## Роутинг
+
+- Роутер подключается в слое **app**; маршруты ведут на **pages** (lazy import)
+- Lazy loading для страниц:
+
+```ts
+component: () => import('@/pages/home/ui/HomePage.vue');
+```
+
+- Защита роутов — navigation guards в **app** или в **pages** (через композиции), без нарушения импортов FSD
+- Названия роутов — `camelCase`
+
+## Обработка ошибок
+
+- Глобальный обработчик ошибок API — в **shared/api** (interceptor)
+- Показывать пользователю понятные сообщения, не технические детали
+- Loading/error — в UI соответствующих **features** / **widgets** / **pages**
+
+## Запрещено
+
+- Нарушать порядок слоёв FSD (импорт «снизу вверх» или между слайсами одного слоя без выноса в shared/верхний слой)
+- Импортировать внутренности слайса минуя его **index.ts**
+- Прямые вызовы axios из компонентов страниц/виджетов (только через слой данных слайса / shared)
+- Прямая мутация Pinia state вне store
+- Использование `Options API`
+- Использование `any` типа
+- `console.log` в production коде
