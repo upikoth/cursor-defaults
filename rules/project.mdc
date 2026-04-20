@@ -37,6 +37,7 @@ project/
 │   ├── AGENTS.md      ← рабочий процесс AI (см. также rules/agents.mdc, always apply)
 │   └── rules/         ← правила для AI (*.mdc)
 ├── docs/              ← репозиторий tracking-docs
+│   ├── context/       ← общий контекст продукта (идея, ценность, границы)
 │   ├── requirements/  ← бизнес-требования (Markdown)
 │   ├── architecture/  ← архитектурные решения (ADR)
 │   └── api/           ← OpenAPI спецификации
