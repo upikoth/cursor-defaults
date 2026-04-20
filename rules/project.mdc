@@ -38,8 +38,8 @@ project/
 │   ├── requirements/  ← бизнес-требования (Markdown)
 │   ├── architecture/  ← архитектурные решения (ADR)
 │   └── api/           ← OpenAPI спецификации
-├── backend/           ← Go
-└── frontend/          ← Vue3
+├── backend/           ← git submodule (репозиторий `tracking-backend`, Go)
+└── frontend/          ← git submodule (репозиторий `tracking-frontend`, Vue3)
 ```
 
 ## Новые фичи
