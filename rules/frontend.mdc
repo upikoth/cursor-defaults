@@ -13,6 +13,22 @@ alwaysApply: false
 - Pinia (стейт-менеджмент)
 - Vue Router
 - Axios (HTTP-клиент)
+- **PrimeVue** (UI kit), **PrimeIcons**, **PrimeFlex** (утилиты раскладки), тема **Aura** (`@primeuix/themes`)
+
+## UI Kit (PrimeVue)
+
+- Интерфейс строится на **PrimeVue**: тема **Aura** в тёмном режиме (`<html class="dark">` и `darkModeSelector: '.dark'` в опциях темы), подключение `PrimeVue`, глобально **`ConfirmationService`** для подтверждений, стили **primeicons** и **primeflex** в `main.ts`.
+- **Не использовать** нативные элементы, если в библиотеке есть замена: `button` → `Button`, текстовые поля → `InputText`, числа → `InputNumber`, выпадающие списки → `Select`, таблицы → `DataTable` + `Column`, чекбоксы → `Checkbox`, дата и время → `DatePicker`, сообщения → `Message`, индикация загрузки → `ProgressSpinner`, блоки интерфейса → `Panel`, `Card`, шапка приложения → `Toolbar`, подтверждения удаления и т.п. → **`ConfirmDialog`** в корне (`app.vue`) и **`useConfirm()`** в страницах.
+- **Допустимы** без дублирования в kit: семантические **`main`**, заголовки **`h1`–`h3`**, обёртки для сетки **`div`** с классами PrimeFlex, **`RouterLink`** для маршрутизации; кнопочные переходы оформлять через **`Button`** внутри **`RouterLink`** со слотом **`custom`** или эквивалентный вызов навигации.
+- Кастомные токены в `app/styles/theme.css` только если нужны вне компонентов PrimeVue (например цвета для **ECharts**).
+
+## Именование файлов
+
+- Все файлы в `frontend/src/` именуются в **kebab-case** (слова через дефис, без camelCase и PascalCase в имени файла): например `route-paths.ts`, `dashboard-page.vue`, `metrics-api.ts`, `daily-series.spec.ts`, `chart-widget.vue`.
+- Допустимы короткие имена целиком в нижнем регистре без дефисов: `main.ts`, `router.ts`, `index.ts`, `http.ts`, `types.ts`, `dates.ts`, `health.ts`.
+- Суффиксы типов сохраняем: `.vue`, `.ts`, `.spec.ts`, `.css`.
+- Корневой layout приложения — `app.vue` (не `App.vue`). На регистронезависимых файловых системах переименование `App.vue` → `app.vue` выполнять в два шага через временное имя, иначе файл не сохранится как отдельный.
+- Конфигурация в корне репозитория (`vite.config.ts`, `tsconfig.json`, `index.html`) может следовать принятым в Vite/TS соглашениям.
 
 ## Архитектура — Feature-Sliced Design (FSD)
 
@@ -51,7 +67,7 @@ alwaysApply: false
 
 ### Публичное API
 
-Каждый слайс экспортирует наружу только то, что объявлено в **`index.ts`** в корне слайса (реэкспорт). Внешний код импортирует **только** из публичного API, не из внутренних файлов слайса (`import { X } from '@/entities/user'` — да; `import ... from '@/entities/user/ui/UserCard.vue'` — нет).
+Каждый слайс экспортирует наружу только то, что объявлено в **`index.ts`** в корне слайса (реэкспорт). Внешний код импортирует **только** из публичного API, не из внутренних файлов слайса (`import { X } from '@/entities/user'` — да; `import ... from '@/entities/user/ui/user-card.vue'` — нет).
 
 ### Пример структуры `src/`
 
@@ -60,17 +76,17 @@ frontend/
 ├── src/
 │   ├── app/
 │   │   ├── main.ts
-│   │   ├── App.vue
+│   │   ├── app.vue
 │   │   ├── providers/
 │   │   ├── styles/
 │   │   └── index.ts
 │   ├── pages/
 │   │   └── home/
-│   │       ├── ui/HomePage.vue
+│   │       ├── ui/home-page.vue
 │   │       └── index.ts
 │   ├── widgets/
 │   │   └── header/
-│   │       ├── ui/Header.vue
+│   │       ├── ui/header.vue
 │   │       └── index.ts
 │   ├── features/
 │   │   └── auth-by-email/
@@ -93,7 +109,7 @@ frontend/
 └── ...
 ```
 
-Unit-тесты — рядом с кодом: `UserCard.vue` → `UserCard.spec.ts`, в `model/` — `useAuth.spec.ts` и т.д.
+Unit-тесты — рядом с кодом: `user-card.vue` → `user-card.spec.ts`, в `model/` — `use-auth.spec.ts` и т.д.
 
 ## Компоненты
 
@@ -119,13 +135,11 @@ const emit = defineEmits<{
 - Один компонент — один файл `.vue`
 - Максимальный размер компонента — 200 строк. Длиннее — разбить на подкомпоненты или вынести логику в **model** / **lib** слайса
 
-## Именование
+## Именование в коде (в дополнение к именам файлов)
 
-- Компоненты: `PascalCase.vue` (например `UserCard.vue`)
-- Composables: `useXxx.ts` (например `useAuth.ts`)
-- Stores: `useXxxStore.ts` (например `useUserStore.ts`) — размещать в сегменте **model** соответствующего **entity** или **feature**
-- Типы/интерфейсы: `PascalCase` (например `UserProfile`)
-- Файлы утилит: `camelCase.ts`
+- Имена **экспортируемых** Vue-компонентов и типов в TypeScript — по-прежнему **PascalCase** (`UserCard`, `UserProfile`).
+- Composables: файл в kebab-case (`use-auth.ts`), экспортируемая функция обычно **camelCase** с префиксом `use` (`useAuth`).
+- Stores: файлы в kebab-case (`use-user-store.ts`), размещать в сегменте **model** соответствующего **entity** или **feature**.
 
 ## Pinia Stores
 
@@ -177,7 +191,7 @@ export async function getUser(id: number): Promise<User> {
 - Lazy loading для страниц:
 
 ```ts
-component: () => import('@/pages/home/ui/HomePage.vue');
+component: () => import('@/pages/home/ui/home-page.vue');
 ```
 
 - Защита роутов — navigation guards в **app** или в **pages** (через композиции), без нарушения импортов FSD

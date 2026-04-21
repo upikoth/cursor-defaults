@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## Слои и зависимости
 
-Сборка приложения в **`internal/app`**: сначала **repositories** и **clients**, затем **services**, затем **controller**. Зависимости только «внутрь»: к БД и внешним API обращаются **repositories** и **clients**; бизнес-сценарии — в **services**; HTTP — в **controller**.
+Сборка приложения в **`internal/app`**: **`Repository.Connect`** создаёт пул и репозитории по сущностям; далее **clients**, сборка графа **services** (`health`, `metrics`, …), затем **controller**. Композиция сервисов — только в `app`. Зависимости только «внутрь»: к БД и внешним API обращаются **repositories** и **clients**; бизнес-сценарии — в **services**; HTTP — в **controller**.
 
 ```
 controller (HTTP) → services → repositories / clients → БД и внешние сервисы
@@ -20,6 +20,13 @@ controller (HTTP) → services → repositories / clients → БД и внешн
 - Писать запросы к БД вне пакетов `internal/repositories/...`.
 - Держать бизнес-логику в HTTP-слое (только маппинг, вызов сервисов, ответы/ошибки).
 
+## Организация файлов (handler, services, repositories)
+
+- **Один экспортируемый метод — один файл** (в пределах пакета): каждая операция handler’а, каждый метод сервиса и каждый метод репозитория живут в отдельном файле `snake_case.go`. Исключение: конструктор и поля структуры в **`1_init.go`**, вспомогательные мапперы в **`mapping.go`**, общие утилиты одного пакета (например **`unique_uuids.go`**, **`exists.go`**), если они не раздувают один файл сверх разумного.
+- **Группировка по сущностям (доменам):** внутри `internal/services/` и `internal/repositories/<драйвер>/` подкаталоги по сущности (`metrics`, `events`, `charts`, `dashboards`, …). В каждом таком пакете — только код этой сущности.
+- **Зависимости сервисов:** сервис может вызывать **только** репозиторий **своей** сущности и/или **другие сервисы**. Запрещено из сервиса метрик обращаться к репозиторию событий и т.п.; кросс-доменная логика — через вызов другого сервиса (например проверка существования графика при создании дашборда — через сервис графиков).
+- **Общие вещи:** общие ошибки хранилища (`repoerrors`), перевод ошибок PostgreSQL в sentinel-ы (`pgerr`), доменные ошибки без транспорта (`internal/apperrors`), HTTP/ogen-ответы об ошибках (`controller/.../httperr`) — не в пакетах доменных сервисов; сервисы возвращают `apperrors`, handler маппит в `*api.ErrorStatusCode` через `httperr.FromApp`.
+
 ## Структура каталогов (как в эталоне)
 
 ```
@@ -28,12 +35,12 @@ backend/
 │   └── app/
 │       └── main.go          # Точка входа: опционально godotenv, config, logger, app, graceful shutdown
 ├── internal/
-│   ├── app/                 # Сборка: repositories → clients → services → controller; Start/Stop
+│   ├── app/                 # Композиция: Connect (пул + репозитории) → services → controller; Start/Stop
 │   ├── config/              # Конфиг из окружения (envconfig)
 │   ├── constants/           # Общие константы и sentinel-ошибки при необходимости
 │   ├── controller/          # Входной HTTP-слой (в эталоне — http-controller + handler)
-│   ├── services/            # Бизнес-логика по доменам (подпакеты: users, sessions, …)
-│   ├── repositories/        # Доступ к данным по бэкенду БД (в эталоне — ydb/…; здесь — слой под выбранную СУБД)
+│   ├── services/            # Бизнес-логика: подпакет на сущность (metrics/, events/, …), один метод — один файл
+│   ├── repositories/        # Доступ к данным: postgres/<сущность>/ с репозиторием на домен
 │   ├── clients/             # Внешние HTTP/SDK-клиенты, не смешивать с repository
 │   ├── models/              # Доменные модели и типы ошибок API (например Error + ErrorCode)
 │   ├── pkg/                 # Логгер (интерфейс), трейсинг, переиспользуемые утилиты
@@ -45,18 +52,19 @@ backend/
 └── go.mod
 ```
 
-Имена подпакетов домена — **kebab-case** (`password-recovery-requests`). Внутри домена в эталоне принят файл **`1_init.go`** для конструктора и полей структуры; операции — отдельными файлами по смыслу (`get_by_id.go`, `create.go`, …).
+Имена подпакетов домена — **kebab-case** при составных именах (`password-recovery-requests`). Внутри домена: **`1_init.go`** — конструктор и поля структуры сервиса/репозитория; каждая операция — **отдельный файл** (`metrics_list.go`, `create_metric.go`, …).
 
 ## HTTP и API
 
 - Контракт API задаётся **OpenAPI**; сервер и типы генерируются **ogen** (`go run github.com/ogen-go/ogen/cmd/ogen@latest …`) в `internal/generated/...`. Команды генерации — в `scripts/generate.sh` эталона.
-- Реализации методов API живут в **`internal/controller/.../handler`**, типы запросов/ответов — из сгенерированного пакета.
+- Реализации методов API живут в **`internal/controller/.../handler`**, **по одному файлу на метод** (`metrics_list.go`, `events_create.go`, …), типы запросов/ответов — из сгенерированного пакета.
 - Префикс API и документация в маршрутизации — как в эталоне (например `/api/`, выдача swagger/static при необходимости).
 - Middleware: логирование запросов, трейсинг (OpenTelemetry), обработка ошибок через **ErrorHandler**, согласованный с `Handler.NewError`.
 
 ## Ошибки
 
-- Доменные и клиентские ошибки с HTTP-семантикой — тип **`models.Error`** (код, статус, описание), проверка в обработчике через **`errors.As`** (см. эталон `handler.NewError`).
+- Доменные ошибки приложения — пакет **`internal/apperrors`** (`Kind`, `Invalid` / `NotFound` / `Internal`), без импорта `internal/generated/api` в сервисах для error-path.
+- Маппинг в HTTP/ogen — в **`internal/controller/http-controller/httperr`** (`FromApp`, `BadRequest`, …).
 - Оборачивание для стека и контекста: **`github.com/pkg/errors`** (`errors.WithStack`, `errors.Wrap`), совместимо с проверками `errors.Is` / `errors.As`.
 - Клиенту не отдавать внутренние детали; в ответе — согласованная структура ошибки из OpenAPI/генератора.
 
