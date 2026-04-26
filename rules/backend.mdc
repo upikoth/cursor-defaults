@@ -16,6 +16,8 @@ controller (HTTP) → services → repositories / clients → БД и внешн
 
 **Доменные сущности (`internal/entities`):** типы, описывающие сущности продукта (метрика, дашборд, событие, график и т.д.). **Результаты** методов **repositories** и **services** — в этих структурах (или `error`), без импорта `internal/generated/api` в репозиториях и сервисах. **Перевод** доменных значений в типы **OpenAPI/ogen** (`api.*`) — только в **HTTP controller** (например вспомогательные функции в `internal/controller/.../handler/`, `to_api.go` и т.п.): преобразование запроса (`api` → примитивы / `entities` для передачи в сервис) и ответа (`entities` → `api`).
 
+**Параметры по сущности:** вспомогательные структуры для сценариев (создание, обновление, …) хранить в `internal/entities` в файлах **`<сущность>_params.go`** (например `metric_params.go`, `event_params.go`, `chart_params.go`). **Метод `Create`** у репозитория и сервиса: сигнатура `Create(ctx context.Context, params entities.ИмяCreateParams) (…)` — **не** длинный список примитивов. В `…CreateParams` **обязательные** к передаче поля — **по значению**; поля, которые в домене могут отсутствовать или соответствуют `null` в API/БД, — **указатели** (`*T`, `*string`, `*ChartOptions` и т.п.). Сборка `params` из HTTP — в **controller**; валидация и обогащение — в **service**.
+
 **Запрещено:**
 
 - Вызывать repository или клиентов напрямую из слоя controller (только через services).
