@@ -14,11 +14,14 @@ alwaysApply: false
 controller (HTTP) → services → repositories / clients → БД и внешние сервисы
 ```
 
+**Доменные сущности (`internal/entities`):** типы, описывающие сущности продукта (метрика, дашборд, событие, график и т.д.). **Результаты** методов **repositories** и **services** — в этих структурах (или `error`), без импорта `internal/generated/api` в репозиториях и сервисах. **Перевод** доменных значений в типы **OpenAPI/ogen** (`api.*`) — только в **HTTP controller** (например вспомогательные функции в `internal/controller/.../handler/`, `to_api.go` и т.п.): преобразование запроса (`api` → примитивы / `entities` для передачи в сервис) и ответа (`entities` → `api`).
+
 **Запрещено:**
 
 - Вызывать repository или клиентов напрямую из слоя controller (только через services).
 - Писать запросы к БД вне пакетов `internal/repositories/...`.
 - Держать бизнес-логику в HTTP-слое (только маппинг, вызов сервисов, ответы/ошибки).
+- Использовать типы `internal/generated/api` в **services** и **repositories** (кроме сгенерированного кода и точки входа в controller).
 
 ## Организация файлов (handler, services, repositories)
 
@@ -42,7 +45,7 @@ backend/
 │   ├── services/            # Бизнес-логика: подпакет на сущность (metrics/, events/, …), один метод — один файл
 │   ├── repositories/        # Доступ к данным: postgres/<сущность>/ с репозиторием на домен
 │   ├── clients/             # Внешние HTTP/SDK-клиенты, не смешивать с repository
-│   ├── models/              # Доменные модели и типы ошибок API (например Error + ErrorCode)
+│   ├── entities/            # Доменные сущности (результаты repo/service; в HTTP — маппинг в api)
 │   ├── pkg/                 # Логгер (интерфейс), трейсинг, переиспользуемые утилиты
 │   └── generated/           # Сгенерированный код (ogen и т.п.) — не править руками
 ├── docs/                    # OpenAPI-спеки для генерации (в эталоне — docs/app/docs.yml и др.)
