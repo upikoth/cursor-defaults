@@ -16,7 +16,7 @@ controller (HTTP) → services → repositories / clients → БД и внешн
 
 **Доменные сущности (`internal/entities`):** типы, описывающие сущности продукта (метрика, дашборд, событие, график и т.д.). **Результаты** методов **repositories** и **services** — в этих структурах (или `error`), без импорта `internal/generated/api` в репозиториях и сервисах. **Перевод** доменных значений в типы **OpenAPI/ogen** (`api.*`) — только в **HTTP controller** (например `internal/controller/.../handler/`, **`from_api.go`**, **`to_api.go`**): преобразование запроса (`api` → `entities`) и ответа (`entities` → `api`).
 
-**Параметры по сущности:** вспомогательные структуры для сценариев (создание, обновление, …) хранить в `internal/entities` в файлах **`<сущность>_params.go`** (например `metric_params.go`, `event_params.go`, `chart_params.go`). **Метод `Create`** у репозитория и сервиса: сигнатура `Create(ctx context.Context, params entities.ИмяCreateParams) (…)` — **не** длинный список примитивов. В `…CreateParams` **обязательные** к передаче поля — **по значению**; поля, которые в домене могут отсутствовать или соответствуют `null` в API/БД, — **указатели** (`*T`, `*string`, `*ChartOptions` и т.п.). **Метод `Update`:** `Update(ctx context.Context, params entities.ИмяUpdateParams) (…)`; в `…UpdateParams` **идентификаторы сущности** и иные **обязательные для вызова** поля — **по значению**; поля, которые **не меняются**, если в запросе «не задано», — через **`entities.Optional[T]`** (`Set == true` — участвуют в `SET`; `Set == false` — колонка не трогается). Репозиторий при необходимости строит динамический `SET` по полям с `Set`. Семантика «поля нет в JSON» vs «явный null / нулевое» задаётся при маппинге `api` → `entities` в **controller** (для PUT с полным телом чаще все обновляемые поля с `Set: true`). Сборка `params` из HTTP — в **controller**; валидация и обогащение — в **service**.
+**Параметры по сущности:** вспомогательные структуры для сценариев (создание, обновление, …) хранить в `internal/entities` в файлах **`<сущность>_params.go`** (например `metric_params.go`, `event_params.go`, `chart_params.go`); для **листинга** — не одна `…ListParams`, а отдельные типы и сигнатуры, см. **«Листинги (List)»** ниже. **Метод `Create`** у репозитория и сервиса: сигнатура `Create(ctx context.Context, params entities.ИмяCreateParams) (…)` — **не** длинный список примитивов. В `…CreateParams` **обязательные** к передаче поля — **по значению**; поля, которые в домене могут отсутствовать или соответствуют `null` в API/БД, — **указатели** (`*T`, `*string`, `*ChartOptions` и т.п.). **Метод `Update`:** `Update(ctx context.Context, params entities.ИмяUpdateParams) (…)`; в `…UpdateParams` **идентификаторы сущности** и иные **обязательные для вызова** поля — **по значению**; поля, которые **не меняются**, если в запросе «не задано», — через **`entities.Optional[T]`** (`Set == true` — участвуют в `SET`; `Set == false` — колонка не трогается). Репозиторий при необходимости строит динамический `SET` по полям с `Set`. Семантика «поля нет в JSON» vs «явный null / нулевое» задаётся при маппинге `api` → `entities` в **controller** (для PUT с полным телом чаще все обновляемые поля с `Set: true`). Сборка `params` из HTTP — в **controller**; валидация и обогащение — в **service**.
 
 **Запрещено:**
 
@@ -69,6 +69,32 @@ backend/
 - Префикс API и документация в маршрутизации — как в эталоне (например `/api/`, выдача swagger/static при необходимости).
 - Middleware: логирование запросов, трейсинг (OpenTelemetry), обработка ошибок через **ErrorHandler**, согласованный с `Handler.NewError`.
 
+## Листинги (`List`)
+
+Общий паттерн пагинированных выборок (пример: метрики). Его **придерживайся** при добавлении листинга для другой сущности, если нет веской причины иначе.
+
+### Домен (`internal/entities`)
+
+- **Переиспользуемые типы** — в **`listing.go`**: `ListPagination` (offset, limit), `ListSort` (поле строкой + `ListOrder` **asc** / **desc**), `ListResponseMeta` (offset, limit, **total**), `ListResult[T]` (**Data** + **Meta**). Они **общие** для всех листингов.
+- **По сущности** — в `internal/entities/`, в файле **`<сущность>_list_params.go`** (или согласованное имя): отдельные типы для **фильтра** (`…ListFilter`) и **связей** (`…ListRelations`) для include / join **на будущее**. Пока не реализовано — **пустая структура** `struct{}` с комментарием-заглушкой. **Агрегирующую структуру** вида `…ListParams` (все поля в одной) **не** вводить: сервис и репозиторий принимают **параметры отдельными аргументами** в **одинаковом порядке**: `filter`, `relations`, `pagination`, `sort`.
+- **Валидация/нормализация** лимитов, offset и `ListOrder` — в **сервисе** (приватные функции, мутируют `*ListPagination` и `*ListSort` или эквивалент). Whitelist **поля сортировки в SQL** — в **репозитории** (не дублировать проверку поля в сервисе, если нет бизнес-требований). Фильтр по полям **до** реализации в SQL — заглушка, без лишней логики в сервисе.
+
+### Сервис (`internal/services/<сущность>/list.go`)
+
+- Сигнатура: `List(ctx context.Context, filter entities.…ListFilter, relations entities.…ListRelations, pagination entities.ListPagination, sort entities.ListSort) (entities.ListResult[entities.…], error)`.
+- После нормализации вызывать **репозиторий** с **теми же** четырьмя аргументами. Ошибки БД/репозитория — `apperrors.Internal(err)` (или согласованный маппинг), без утечки деталей наружу.
+- Интерфейс в **`handler/deps.go`** для этого сервиса — **такой же** набор аргументов, не `…Params` одним типом.
+
+### Репозиторий (`internal/repositories/postgres/<сущность>/list.go`)
+
+- Сигнатура **как у сервиса** (те же четыре доменных аргумента после `ctx`). Неиспользуемые пока `filter` / `relations` — явно **`_ = filter`**, `…` при необходимости, чтобы не копить «мёртвые» параметры без соглашения.
+- Возврат: **`entities.ListResult[сущность]`** — `Data` (страница) и `Meta` с **фактическими** `offset`, `limit` из `pagination` и `total` из `COUNT` по **тем же условиям**, что и выборка.
+
+### HTTP (OpenAPI, ogen, handler)
+
+- **OpenAPI** (`docs/openapi/openapi.yaml`): ответ 200 с **`data`** (массив) и **`meta`** с `$ref` на **общую** схему метаданных (например `ListingResponseMeta`); `sort_dir` / enum направления — **общий** `ListingSortOrder` при необходимости. Параметры пагинации/sort/фильтр/include **описывай** в `components/parameters`; **не** вставляй `default` ответа об ошибке **внутрь** `schema.properties` тела 200 (отдельный `default` у **responses** операции). Имя **`components.responses` не должно совпадать** с **`components.schemas`**, иначе **ogen** падает с конфликтом (пример: ответ `ErrorResponse`, схема тела `Error`). После правок: **`scripts/generate.sh`**, при необходимости фронт: **`generate:api-types`**.
+- **Handler:** маппинг query → домен в **`from_api.go`** (например **несколько return values** `filter, relations, pagination, sort`); в **`v1_*_list.go`** — вызов сервиса с **четырьмя** аргументами, сборка ответа ogen (тип вроде `V1…ListOK`) из `ListResult` и `to_api` для элементов. Типы **`api.*` только** в **controller** и `httperr`.
+
 ## Ошибки
 
 - Доменные ошибки приложения — пакет **`internal/apperrors`** (`Kind`, `Invalid` / `NotFound` / `Internal`), без импорта `internal/generated/api` в сервисах для error-path.
@@ -99,10 +125,23 @@ backend/
 
 ## Качество кода
 
-- Запуск линтера: как в эталоне — **`golangci-lint run`** (конфиг **`.golangci.yaml`**).
+- Запуск линтера: как в эталоне — **`golangci-lint run ./...`** (конфиг **`.golangci.yaml`**, `scripts/lint.sh`).
 - Не добавлять **`init()`** и глобальные переменные без веской причины (линтеры `gochecknoinits`, `gochecknoglobals` в эталоне).
 - **`context.Context`** — первый параметр у функций с I/O и запросами.
 - Импорты: **goimports** с `local-prefixes` на модуль проекта (подставить свой путь модуля из `go.mod`).
+
+### Пробелы и группировка (`wsl_v5`)
+
+Включён линтер **[wsl v5](https://github.com/bombsimon/wsl)** (whitespace / «cuddling»). Новый и правимый **не-генерированный** Go в `backend/` пиши так, чтобы **сразу** проходил `golangci-lint` без правок `wsl_v5`:
+
+- **Проверка `err` сразу после присваивания** — между `x, err := f()` и `if err != nil` **без** пустой строки. Лишние пустые строки перед таким `if` — ошибка `unnecessary whitespace (err)`.
+- **Отдельные `var` / `:=` не слеплять** с соседними фрагментами: после закрытия `if/else` или другого блока часто нужна **пустая строка** перед следующей **декларацией** или перед группой несвязанных statements (`never cuddle decl` и варианты `invalid statement above *`).
+- **Серия из нескольких независимых `if` / `switch` подряд** — **пустая строка между блоками** (несколько «коротких» идущих подряд без разделителя = `invalid statement above if` / `switch`).
+- **Перед `return`**, если выше плотный блок (несколько statement’ов) — **пустая строка** (`too many lines above return`).
+- **Перед `for` по результату** (`Query`) — часто **пустая строка** после `defer` и подготовки (`no shared variables above for`).
+- **Внутри цикла** — пустая строка между `if err := …; err != nil { return }` и следующим присваиванием, если `wsl` требует разделения (`invalid statement above assign`).
+
+Полный набор правил — в репозитории `bombsimon/wsl`; неочевидные места **подтверждай** `golangci-lint run` после правок. Сгенерированный код в `internal/generated/**` в проверку не входит.
 
 ## Именование файлов и типов
 
