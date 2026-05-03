@@ -12,6 +12,7 @@ alwaysApply: false
 - Vite
 - Pinia (стейт-менеджмент)
 - Vue Router
+- **VueUse Router** (`@vueuse/router`) — синхронизация с параметрами `query`
 - Axios (HTTP-клиент)
 - **PrimeVue** (UI kit), **PrimeIcons**, **PrimeFlex** (утилиты раскладки), тема **Aura** (`@primeuix/themes`)
 - **ESLint 9** (flat `eslint.config.js`): `npm run lint` / `lint:fix` в `frontend/`; `build` прогоняет линт. В `<script>`: пустая строка **перед** `if` и **после** оператора `if` (`@stylistic/padding-line-between-statements`: `*→if` и `if→*`).
@@ -203,6 +204,13 @@ component: () => import('@/pages/home/ui/home-page.vue');
 - Защита роутов — navigation guards в **app** или в **pages** (через композиции), без нарушения импортов FSD
 - Названия роутов — `camelCase`
 
+## Query параметры URL
+
+- Менять `query` (строка запроса) через **`useRouteQuery`** из **`@vueuse/router`**, а не собирать объект `query` и вызывать `router.push` / `router.replace` ради обновления отдельных ключей.
+- Несколько ключей, изменённых **синхронно** в одном тике, VueUse сливает в **одну** навигацию (очередь + `nextTick`).
+- Связанные query-параметры одной страницы выносятся в **один composable** (один вызов на странице); вложенные composables получают тот же набор refs (тип вроде `Readonly<{ preset: Ref<…>; … }>`), без повторного `useRouteQuery` для тех же имён в одной setup-цепочке.
+- Исключение: навигация **только** с `path` / `params` при **неизменном** наборе query — допустимо передать текущий `route.query` в `replace` для сохранения строки, без ручной пересборки значений по ключам.
+
 ## Обработка ошибок
 
 - Глобальный обработчик ошибок API — в **shared/api** (interceptor)
@@ -211,6 +219,7 @@ component: () => import('@/pages/home/ui/home-page.vue');
 
 ## Запрещено
 
+- Обновление отдельных ключей URL-query через **`router.replace` / `router.push` с вручную собранным `query`**, когда достаточно **`useRouteQuery`** (исключение — смена path/params с сохранением query, см. выше).
 - Нарушать порядок слоёв FSD (импорт «снизу вверх» или между слайсами одного слоя без выноса в shared/верхний слой)
 - Импортировать внутренности слайса минуя его **index.ts**
 - Прямые вызовы axios из компонентов страниц/виджетов (только через слой данных слайса / shared)
