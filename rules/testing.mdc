@@ -1,5 +1,5 @@
 ---
-description: Testing rules for backend (Go) and frontend (Vue3)
+description: Тестирование Go-сервисов и Vue-приложений по каталогам
 globs: ['**/*_test.go', '**/tests/**', '**/*.spec.ts', '**/*.test.ts']
 alwaysApply: false
 ---
@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## Общие принципы
 
-- Unit-тесты располагаются рядом с тестируемыми файлами (backend: `foo.go` → `foo_test.go`, frontend: `UserCard.vue` → `UserCard.spec.ts`)
+- Unit-тесты рядом с кодом в затронутом сервисе (Go: `foo.go` → `foo_test.go`; Vue: `widget.vue` → `widget.spec.ts`)
 - Тест создаётся вместе с кодом, не после
 - Тестируй поведение, а не реализацию
 - Каждый тест независим — не зависит от порядка запуска и других тестов
@@ -75,7 +75,7 @@ func TestUserService_GetByID(t *testing.T) {
 ### Интеграционные тесты (repository)
 
 - Использовать `testcontainers-go` для поднятия реального PostgreSQL
-- Расположение: `backend/internal/repository/integration_test.go`
+- Расположение: `<имя-go-сервиса>/internal/repository/integration_test.go` (или доменное поддерево `internal/` того же сервиса)
 - Тег сборки: `//go:build integration`
 - Запуск: `go test -tags integration ./...`
 - Каждый тест работает в транзакции с откатом в конце:
@@ -154,7 +154,7 @@ describe('useUserStore', () => {
 ### E2E тесты
 
 - Инструмент: Playwright
-- Расположение: `frontend/tests/e2e/`
+- Расположение рядом с приложением: `<имя-vue-приложения>/tests/e2e/`
 - Покрывают критические пользовательские сценарии (happy path)
 - Именование: `auth.spec.ts`, `user-profile.spec.ts`
 

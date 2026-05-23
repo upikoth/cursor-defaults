@@ -1,10 +1,14 @@
 ---
-description: Go backend rules (эталон — github.com/upikoth/starter-go)
-globs: backend/**
+description: Go backend rules (эталон — github.com/upikoth/starter-go), для любого имени каталога сервиса
+globs:
+  - '**/cmd/**/*.go'
+  - '**/internal/**/*.go'
 alwaysApply: false
 ---
 
 # Правила Backend (Go)
+
+Применяются к каждому **отдельному Go-сервису**. Корнем считается каталог сервиса с **`go.mod`** и типичным деревом ниже (**имя папки = имя сервиса**, kebab-case, например `orders-api`).
 
 ## Слои и зависимости
 
@@ -37,7 +41,7 @@ controller (HTTP) → services → repositories / clients → БД и внешн
 ## Структура каталогов (как в эталоне)
 
 ```
-backend/
+<имя-go-сервиса>/           # например orders-api/, notifications-bff/
 ├── cmd/
 │   └── app/
 │       └── main.go          # Точка входа: опционально godotenv, config, logger, app, graceful shutdown
@@ -132,7 +136,7 @@ backend/
 
 ### Пробелы и группировка (`wsl_v5`)
 
-Включён линтер **[wsl v5](https://github.com/bombsimon/wsl)** (whitespace / «cuddling»). Новый и правимый **не-генерированный** Go в `backend/` пиши так, чтобы **сразу** проходил `golangci-lint` без правок `wsl_v5`:
+Включён линтер **[wsl v5](https://github.com/bombsimon/wsl)** (whitespace / «cuddling»). Новый и правимый **не-генерированный** Go в каждом сервисе пиши так, чтобы **сразу** проходил `golangci-lint` без правок `wsl_v5`:
 
 - **Проверка `err` сразу после присваивания** — между `x, err := f()` и `if err != nil` **без** пустой строки. Лишние пустые строки перед таким `if` — ошибка `unnecessary whitespace (err)`.
 - **Отдельные `var` / `:=` не слеплять** с соседними фрагментами: после закрытия `if/else` или другого блока часто нужна **пустая строка** перед следующей **декларацией** или перед группой несвязанных statements (`never cuddle decl` и варианты `invalid statement above *`).

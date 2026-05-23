@@ -1,10 +1,16 @@
 ---
-description: Vue3 frontend rules (FSD)
-globs: frontend/**
+description: Vue3 frontend rules (FSD), для любого имени каталога приложения
+globs:
+  - '**/src/**/*.vue'
+  - '**/src/**/*.ts'
+  - '**/vite.config.ts'
+  - '**/vite.config.*.ts'
 alwaysApply: false
 ---
 
 # Правила Frontend (Vue3)
+
+Правило для **каждого отдельного Vue-проекта**. Корнем считается каталог приложения (**имя = сервис в kebab-case**, например `admin-web`, `public-site`) с **`src/`**, `vite.config.ts` и деревом слоёв FSD ниже — не только один каталог с именем `frontend/`.
 
 ## Стек
 
@@ -15,7 +21,7 @@ alwaysApply: false
 - **VueUse Router** (`@vueuse/router`) — синхронизация с параметрами `query`
 - Axios (HTTP-клиент)
 - **PrimeVue** (UI kit), **PrimeIcons**, **PrimeFlex** (утилиты раскладки), тема **Aura** (`@primeuix/themes`)
-- **ESLint 9** (flat `eslint.config.js`): `npm run lint` / `lint:fix` в `frontend/`; `build` прогоняет линт. В `<script>`: пустая строка **перед** `if` и **после** оператора `if` (`@stylistic/padding-line-between-statements`: `*→if` и `if→*`).
+- **ESLint 9** (flat `eslint.config.js`): `npm run lint` / `lint:fix` из **корня данного приложения**; `build` прогоняет линт. В `<script>`: пустая строка **перед** `if` и **после** оператора `if` (`@stylistic/padding-line-between-statements`: `*→if` и `if→*`).
 
 ## UI Kit (PrimeVue)
 
@@ -26,7 +32,7 @@ alwaysApply: false
 
 ## Именование файлов
 
-- Все файлы в `frontend/src/` именуются в **kebab-case** (слова через дефис, без camelCase и PascalCase в имени файла): например `route-paths.ts`, `dashboard-page.vue`, `metrics-api.ts`, `daily-series.spec.ts`, `chart-widget.vue`.
+- Все файлы в `src/` приложения именуются в **kebab-case** (слова через дефис, без camelCase и PascalCase в имени файла): например `route-paths.ts`, `dashboard-page.vue`, `metrics-api.ts`, `daily-series.spec.ts`, `chart-widget.vue`.
 - Допустимы короткие имена целиком в нижнем регистре без дефисов: `main.ts`, `router.ts`, `index.ts`, `http.ts`, `types.ts`, `dates.ts`, `health.ts`.
 - Суффиксы типов сохраняем: `.vue`, `.ts`, `.spec.ts`, `.css`.
 - Корневой layout приложения — `app.vue` (не `App.vue`). На регистронезависимых файловых системах переименование `App.vue` → `app.vue` выполнять в два шага через временное имя, иначе файл не сохранится как отдельный.
@@ -74,7 +80,7 @@ alwaysApply: false
 ### Пример структуры `src/`
 
 ```
-frontend/
+<имя-vue-приложения>/        # например admin-web/, public-site/
 ├── src/
 │   ├── app/
 │   │   ├── main.ts

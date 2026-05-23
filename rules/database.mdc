@@ -1,6 +1,8 @@
 ---
-description: PostgreSQL and migrations rules
-globs: ['backend/**', '**/*.sql']
+description: PostgreSQL и миграции (в каждом Go-сервисе свой каталог)
+globs:
+  - '**/migrations/**/*.sql'
+  - '**/*.sql'
 alwaysApply: false
 ---
 
@@ -9,7 +11,7 @@ alwaysApply: false
 ## Миграции
 
 - Инструмент: `golang-migrate` (`github.com/golang-migrate/migrate/v4`)
-- Расположение: `backend/migrations/`
+- Расположение у **конкретного Go-сервиса**: `<имя-go-сервиса>/migrations/` (те же имена файлов для всех сервисов продукта, но физические миграции лежат в том сервисе, который их владелец данных и поднимает `migrate`; при нескольких БД возможны отдельные каталоги в разных сервисах — фиксируй в архитектуре)
 - Формат имени файла: `{version}_{description}.up.sql` и `{version}_{description}.down.sql`
   - Пример: `000001_create_users.up.sql` / `000001_create_users.down.sql`
 - Каждая миграция обратима — файл `.down.sql` обязателен
