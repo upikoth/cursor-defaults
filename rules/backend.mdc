@@ -57,13 +57,58 @@ controller (HTTP) → services → repositories / clients → БД и внешн
 │   ├── pkg/                 # Логгер (интерфейс), трейсинг, переиспользуемые утилиты
 │   └── generated/           # Сгенерированный код (ogen и т.п.) — не править руками
 ├── docs/                    # OpenAPI-спеки для генерации (в эталоне — docs/app/docs.yml и др.)
-├── scripts/                 # build, lint, generate
+├── scripts/                 # build.sh, lint.sh, test.sh, generate.sh и др.
+├── Makefile                 # Цели build, lint, test — только вызов scripts/*.sh
+├── .gitignore               # Артефакты сборки, .env, локальные БД, IDE/OS
 ├── .golangci.yaml           # Линтер (как в эталоне или согласованный с ним набор)
 ├── .env.example
 └── go.mod
 ```
 
 Имена подпакетов домена — **kebab-case** при составных именах (`password-recovery-requests`). Внутри домена: **`1_init.go`** — конструктор, поля **`Service`**, **интерфейсы внешних зависимостей** (для внедрения другого сервиса или оркестрации), без отдельного `deps.go`; CRUD-файлы — **`get.go`**, **`list.go`**, **`create.go`**, **`update.go`**, **`delete.go`**; прочие файлы — по смыслу, см. выше.
+
+## .gitignore
+
+В корне каждого Go-сервиса — **`.gitignore`**. Минимум:
+
+| Категория | Примеры |
+| --------- | ------- |
+| Сборка | `bin/`, `dist/`, `*.exe`, `*.test` |
+| Секреты и локальный конфиг | `.env` (шаблон — только `.env.example`) |
+| Тесты и покрытие | `coverage.out`, `coverage.html` |
+| IDE и ОС | `.idea/`, `.vscode/`, `.DS_Store` |
+| Локальные данные разработки | `*.db`, `*.sqlite` (если БД создаётся рядом с проектом) |
+
+Не коммитить сгенерированные артефакты сборки и файлы с реальными секретами.
+
+## Makefile и scripts
+
+В корне каждого Go-сервиса — **`Makefile`** с целями **`build`**, **`lint`**, **`test`**. Логика сборки, линтинга и тестов — **не** в Makefile: только делегирование в shell-скрипты каталога **`scripts/`** в корне сервиса.
+
+| Цель Makefile | Скрипт | Назначение |
+| ------------- | ------ | ---------- |
+| `build` | `scripts/build.sh` | Сборка бинарника (или артефактов сервиса) |
+| `lint` | `scripts/lint.sh` | Запуск линтера (`golangci-lint run ./...` и т.п.) |
+| `test` | `scripts/test.sh` | Запуск тестов (`go test ./...` и при необходимости флаги) |
+
+Дополнительные задачи (генерация из OpenAPI и др.) — отдельные скрипты в **`scripts/`** (например `generate.sh`); при необходимости для них добавляют цели в Makefile по тому же принципу — **вызов скрипта**, без дублирования команд.
+
+Пример Makefile:
+
+```makefile
+.PHONY: build lint test
+
+build:
+	./scripts/build.sh
+
+lint:
+	./scripts/lint.sh
+
+test:
+	./scripts/test.sh
+```
+
+Скрипты должны быть исполняемыми (`chmod +x`) и завершаться с ненулевым кодом при ошибке (`set -e` в начале).
 
 ## HTTP и API
 
@@ -129,7 +174,7 @@ controller (HTTP) → services → repositories / clients → БД и внешн
 
 ## Качество кода
 
-- Запуск линтера: как в эталоне — **`golangci-lint run ./...`** (конфиг **`.golangci.yaml`**, `scripts/lint.sh`).
+- Сборка, линт и тесты — через **`make build`**, **`make lint`**, **`make test`** (реализация в **`scripts/build.sh`**, **`scripts/lint.sh`**, **`scripts/test.sh`**). Линтер — **`golangci-lint run ./...`**, конфиг **`.golangci.yaml`**.
 - Не добавлять **`init()`** и глобальные переменные без веской причины (линтеры `gochecknoinits`, `gochecknoglobals` в эталоне).
 - **`context.Context`** — первый параметр у функций с I/O и запросами.
 - Импорты: **goimports** с `local-prefixes` на модуль проекта (подставить свой путь модуля из `go.mod`).
@@ -155,4 +200,4 @@ controller (HTTP) → services → repositories / clients → БД и внешн
 
 ## Обновление эталона
 
-При сомнениях смотреть актуальную версию **starter-go** (структура `internal/`, `scripts/`, `go.mod`, обработка ошибок и трейсинг).
+При сомнениях смотреть актуальную версию **starter-go** (структура `internal/`, `scripts/`, `Makefile`, `go.mod`, обработка ошибок и трейсинг).
