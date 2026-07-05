@@ -1,5 +1,5 @@
 ---
-description: Go backend rules (эталон — github.com/upikoth/starter-go), для любого имени каталога сервиса
+description: Go backend rules, для любого имени каталога сервиса
 globs:
   - '**/cmd/**/*.go'
   - '**/internal/**/*.go'
@@ -183,7 +183,11 @@ test:
 - Общие sentinel-ошибки приложения — **`internal/apperrors`** (`ErrNotFound` и др.); **одно** значение на смысл для всех слоёв, проверка через **`errors.Is`**. **Не** дублировать в сервисах и репозиториях (`var ErrNotFound = errors.New(...)` в `services/events` — **запрещено**).
 - Доменные ошибки с контекстом — расширение **`internal/apperrors`** (`Kind`, `Invalid` / `NotFound` / `Internal` по мере роста проекта), без импорта `internal/generated/api` в сервисах для error-path.
 - Маппинг в HTTP/ogen — в **`internal/controller/http-controller/httperr`** (`FromApp`, `BadRequest`, …).
-- Оборачивание для стека и контекста: **`github.com/pkg/errors`** (`errors.WithStack`, `errors.Wrap`), совместимо с проверками `errors.Is` / `errors.As`.
+- Оборачивание ошибок в **методах repositories и services**: в начале метода `op := operation.GetOperationName()`, при возврате ошибки — **`fmt.Errorf("%s: %w", op, err)`**. Имя операции — **`слой.пакет.имяФункции`** (например `services.buckets.Ensure`, `repositories.events.Insert`). Пакет — **`internal/pkg/operation`** (`GetOperationName`).
+- Sentinel-ошибки (`apperrors.ErrNotFound` и др.) **не оборачивать** — возвращать как есть.
+- **`errors.WithStack` и `github.com/pkg/errors` для оборачивания не использовать** — контекст операции задаётся через `GetOperationName` + `fmt.Errorf`.
+- Ошибки из callback внутри `WithTx` **не оборачивать** повторно на уровне `tx.Repository` — их оборачивает вызывающий сервис.
+- Совместимость: **`errors.Is`** / **`errors.As`** через `%w` в `fmt.Errorf`.
 - Клиенту не отдавать внутренние детали; в ответе — согласованная структура ошибки из OpenAPI/генератора.
 
 ## Логирование и наблюдаемость
@@ -234,6 +238,3 @@ test:
 - Пакеты и каталоги доменов: **kebab-case** для составных имён.
 - Экспортируемые типы и конструкторы — **PascalCase**; приватное — **camelCase**.
 
-## Обновление эталона
-
-При сомнениях смотреть актуальную версию **starter-go** (структура `internal/`, `scripts/`, `Makefile`, `go.mod`, обработка ошибок и трейсинг).
